@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Restore Credentials PoC - Auth Service</title>
+  <style>
+    :root {
+      --primary: #1a73e8;
+      --primary-hover: #1557b0;
+      --bg: #f8f9fa;
+      --card-bg: #ffffff;
+      --text: #202124;
+      --text-muted: #5f6368;
+      --border: #dadce0;
+      --success: #1e8e3e;
+      --error: #d93025;
+      --error-bg: #fce8e6;
+      --error-border: #fad2cf;
+      --android-green: #2e7d32;
+      --android-bg: #e8f5e9;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      margin: 0;
+      padding: 16px;
+      box-sizing: border-box;
+    }
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+      width: 100%;
+      max-width: 440px;
+      padding: 32px 24px;
+      box-sizing: border-box;
+    }
+    h1 {
+      font-size: 22px;
+      font-weight: 600;
+      margin: 0 0 8px 0;
+      text-align: center;
+    }
+    p.subtitle {
+      color: var(--text-muted);
+      font-size: 14px;
+      text-align: center;
+      margin: 0 0 24px 0;
+      line-height: 1.5;
+    }
+    .badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 600;
+      background: #e8f0fe;
+      color: var(--primary);
+      margin-bottom: 12px;
+    }
+    .badge-error {
+      background: var(--error-bg);
+      color: var(--error);
+    }
+    .badge-success {
+      background: var(--android-bg);
+      color: var(--android-green);
+    }
+    .form-group {
+      margin-bottom: 20px;
+    }
+    label {
+      display: block;
+      font-size: 14px;
+      font-weight: 500;
+      margin-bottom: 6px;
+      color: var(--text);
+    }
+    input[type="text"] {
+      width: 100%;
+      padding: 12px 14px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 16px;
+      box-sizing: border-box;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    input[type="text"]:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 2px rgba(26,115,232,0.2);
+    }
+    button, .btn {
+      width: 100%;
+      background: var(--primary);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      padding: 14px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 8px;
+      text-decoration: none;
+      box-sizing: border-box;
+      transition: background 0.2s;
+    }
+    button:hover, .btn:hover {
+      background: var(--primary-hover);
+    }
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    .btn-secondary {
+      background: #ffffff;
+      color: var(--primary);
+      border: 1px solid var(--border);
+    }
+    .btn-secondary:hover {
+      background: #f1f3f4;
+    }
+    .btn-download {
+      background: var(--android-green);
+      color: #ffffff;
+      box-shadow: 0 2px 6px rgba(46,125,50,0.3);
+      padding: 14px;
+      font-size: 15px;
+    }
+    .btn-download:hover {
+      background: #256628;
+    }
+    .divider {
+      display: flex;
+      align-items: center;
+      text-align: center;
+      margin: 20px 0;
+      color: var(--text-muted);
+      font-size: 13px;
+    }
+    .divider::before, .divider::after {
+      content: '';
+      flex: 1;
+      border-bottom: 1px solid var(--border);
+    }
+    .divider:not(:empty)::before {
+      margin-right: .75em;
+    }
+    .divider:not(:empty)::after {
+      margin-left: .75em;
+    }
+    .status-box {
+      margin-top: 16px;
+      padding: 12px 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      display: none;
+      word-break: break-all;
+      line-height: 1.4;
+    }
+    .status-success {
+      background: #e6f4ea;
+      color: var(--success);
+      border: 1px solid #ceead6;
+      display: block;
+    }
+    .status-error {
+      background: var(--error-bg);
+      color: var(--error);
+      border: 1px solid var(--error-border);
+      display: block;
+    }
+    .redirect-link {
+      margin-top: 16px;
+      display: none;
+      text-align: center;
+    }
+
+    /* Views */
+    .view-container {
+      display: none;
+    }
+
+    /* Error Box */
+    .error-box {
+      background: var(--error-bg);
+      border: 1px solid var(--error-border);
+      border-radius: 10px;
+      padding: 16px;
+      margin-bottom: 20px;
+      text-align: left;
+    }
+    .error-box-title {
+      font-weight: bold;
+      color: var(--error);
+      font-size: 15px;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .error-box-text {
+      font-size: 13px;
+      color: #3c4043;
+      margin: 0 0 12px 0;
+      line-height: 1.4;
+    }
+    .param-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      font-size: 12px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+    .param-item {
+      padding: 4px 0;
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+    }
+    .param-item.missing {
+      color: var(--error);
+      font-weight: 600;
+    }
+    .param-item.ok {
+      color: var(--success);
+    }
+    .info-card {
+      background: #f1f3f4;
+      border-radius: 8px;
+      padding: 12px;
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.5;
+      margin-top: 16px;
+    }
+    .steps-list {
+      margin: 12px 0 0 0;
+      padding-left: 18px;
+      font-size: 13px;
+      color: #3c4043;
+      line-height: 1.6;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+
+    <!-- ======================================================== -->
+    <!-- 1. App Download View (クエリパラメータが何も指定されていない場合) -->
+    <!-- ======================================================== -->
+    <div id="appDownloadView" class="view-container">
+      <div style="text-align: center;">
+        <span class="badge badge-success">📱 Android アプリ認証エンドポイント</span>
+      </div>
+      <div style="font-size: 48px; text-align: center; margin: 12px 0;">🤖</div>
+      <h1>Restore Credentials PoC</h1>
+      <p class="subtitle">
+        本ページは Android アプリ専用の認証画面です。<br>
+        Webブラウザから直接ログインすることはできません。
+      </p>
+
+      <div style="margin-bottom: 20px;">
+        <a href="/RestoreCredentialsPoC.apk" download="RestoreCredentialsPoC.apk" class="btn btn-download">
+          <span>📥</span> Android アプリをダウンロード (Signed APK)
+        </a>
+      </div>
+
+      <div class="info-card">
+        <strong>利用手順:</strong>
+        <ol class="steps-list">
+          <li>上のボタンから <code>RestoreCredentialsPoC.apk</code> をダウンロードして端末にインストールします。</li>
+          <li>アプリを起動し、「<strong>1. OIDCログイン</strong>」ボタンをタップしてください。</li>
+          <li>アプリ内の認証タブ（AuthTab）より本画面が呼び出され、パスキー登録・認証が実行されます。</li>
+        </ol>
+      </div>
+
+      <div style="margin-top: 16px; font-size: 11px; color: var(--text-muted); text-align: center;">
+        ※ 提供元不明のアプリの許可が必要な場合があります。<br>
+        Cloud Run バックエンド接続設定済み
+      </div>
+    </div>
+
+    <!-- ======================================================== -->
+    <!-- 2. OAuth Error View (何か設定されているが何か欠けている場合) -->
+    <!-- ======================================================== -->
+    <div id="oauthErrorView" class="view-container">
+      <div style="text-align: center;">
+        <span class="badge badge-error">⚠️ 400 Bad Request</span>
+      </div>
+      <h1>認可リクエストエラー</h1>
+      <p class="subtitle">OIDC / OAuth 2.0 リクエストに必要な正規パラメータが不足または無効です。</p>
+
+      <div class="error-box">
+        <div class="error-box-title">
+          <span>🚫</span> 不足・無効なパラメータ
+        </div>
+        <p class="error-box-text">セキュリティ保護および仕様準拠のため、以下の正規パラメータをすべて指定してください:</p>
+        <ul id="missingParamsList" class="param-list">
+          <!-- JSで動的生成 -->
+        </ul>
+      </div>
+
+      <div class="info-card">
+        <strong>クライアントアプリ開発者向け確認事項:</strong>
+        <div style="margin-top: 6px;">
+          Android アプリの <code>AuthTabManager</code> から呼び出す認可URLに、正規の <code>client_id</code>, <code>redirect_uri</code>, <code>scope</code>, <code>code_challenge</code>, <code>code_challenge_method=S256</code> を含めているか確認してください。
+        </div>
+      </div>
+
+      <div style="margin-top: 20px;">
+        <a href="/login.html" class="btn btn-secondary">
+          <span>📱</span> アプリダウンロード画面へ
+        </a>
+      </div>
+    </div>
+
+    <!-- ======================================================== -->
+    <!-- 3. Login View (正規パラメータがすべて揃っている場合) -->
+    <!-- ======================================================== -->
+    <div id="loginView" class="view-container">
+      <div style="text-align: center;">
+        <span class="badge">🔒 PKCE保護されたOIDC認証</span>
+      </div>
+      <h1>Restore Credentials PoC</h1>
+      <p class="subtitle">パスキーで登録／ログインしてアプリへ戻ります</p>
+
+      <!-- Client Info Banner -->
+      <div style="background: #e8f0fe; border-radius: 8px; padding: 8px 12px; font-size: 12px; color: #1a73e8; margin-bottom: 16px; text-align: center;">
+        認証要求元: <strong id="displayClientId">android-poc-client</strong>
+      </div>
+
+      <!-- Registration Section -->
+      <div id="registerSection">
+        <div class="form-group">
+          <label for="username">ユーザー名 (Username)</label>
+          <input type="text" id="username" placeholder="例: alice@example.com" value="test-user">
+        </div>
+        <button id="btnRegister">
+          <span>🔑</span> パスキーで登録 (Create Passkey)
+        </button>
+      </div>
+
+      <div class="divider">または</div>
+
+      <!-- Sign In Section -->
+      <div>
+        <button id="btnSignIn" class="btn-secondary">
+          <span>👤</span> 登録済みパスキーでログイン
+        </button>
+      </div>
+
+      <div class="divider">エミュレータ・テスト用</div>
+
+      <!-- Quick Login Section -->
+      <div>
+        <button id="btnQuickLogin" class="btn-secondary" style="border: 1.5px dashed #1a73e8; color: #1a73e8; background: #e8f0fe;">
+          <span>⚡</span> クイックログイン (PoC自動認証)
+        </button>
+      </div>
+
+      <!-- Status Message -->
+      <div id="statusBox" class="status-box"></div>
+
+      <div id="redirectContainer" class="redirect-link">
+        <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 8px;">アプリに自動で戻らない場合はタップしてください:</p>
+        <a id="redirectBtn" href="#" style="color: var(--primary); font-weight: bold; text-decoration: underline;">アプリへ戻る (Deep Link)</a>
+      </div>
+    </div>
+
+  </div>
+
+  <script src="/simplewebauthn-browser.min.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls",
+      "delegate_permission/common.get_login_creds"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.example.restorecredentialspoc",
+      "sha256_cert_fingerprints": [
+        "5A:07:2B:73:54:21:40:02:2F:29:79:4F:AC:CA:37:1D:B6:65:84:66:1D:3C:49:19:AE:86:F7:8B:7A:DB:CF:DF",
+        "80:F1:4A:EA:DA:D1:FB:06:FA:63:E2:12:F7:CA:18:7C:D0:30:CE:39:E5:75:96:83:63:CA:BF:06:15:63:DF:2C"
+      ]
+    }
+  }
+]
