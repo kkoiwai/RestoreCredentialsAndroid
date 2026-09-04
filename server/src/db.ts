@@ -19,6 +19,7 @@ export interface Credential {
   userPresent: boolean;    // UP flag (Bit 0)
   deviceInfo?: string;
   clientId?: string; // Bound client ID (e.g. android-poc-client, android-poc-client-b)
+  scope?: string;    // Authorized OAuth scopes (e.g. 'openid profile')
   createdAt: number;
 }
 
@@ -27,6 +28,7 @@ export interface AuthCode {
   userId: string;
   clientId: string;
   redirectUri: string;
+  scope?: string;
   codeChallenge?: string;
   codeChallengeMethod?: string;
   expiresAt: number;
@@ -36,6 +38,8 @@ export interface Token {
   accessToken: string;
   refreshToken: string;
   userId: string;
+  scope?: string;
+  clientId?: string;
   expiresAt: number;
 }
 
@@ -152,13 +156,15 @@ export class Database {
   }
 
   // Token operations
-  createTokenPair(userId: string, ttlSeconds = 3600): Token {
+  createTokenPair(userId: string, ttlSeconds = 3600, scope = 'openid profile', clientId?: string): Token {
     const accessToken = 'at_' + Math.random().toString(36).substring(2) + Date.now().toString(36);
     const refreshToken = 'rt_' + Math.random().toString(36).substring(2) + Date.now().toString(36);
     const token: Token = {
       accessToken,
       refreshToken,
       userId,
+      scope,
+      clientId,
       expiresAt: Date.now() + ttlSeconds * 1000,
     };
     this.tokens.set(accessToken, token);

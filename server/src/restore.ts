@@ -120,6 +120,8 @@ export async function verifyRestoreRegistration(req: Request, res: Response) {
       ? convertAAGUIDToString(parsedAuthData.aaguid)
       : '00000000-0000-0000-0000-000000000000';
 
+    const scope = (req.body as any).scope || 'openid profile';
+
     const cred = {
       id: credentialID,
       userId: user.id,
@@ -133,6 +135,7 @@ export async function verifyRestoreRegistration(req: Request, res: Response) {
       userVerified: parsedAuthData.flags.uv,   // UV flag
       userPresent: parsedAuthData.flags.up,    // UP flag
       clientId: client_id || CLIENT_ID,        // Bound client ID (App A, App B, etc.)
+      scope,                                   // Authorized OAuth scopes
       createdAt: Date.now(),
       deviceInfo: 'Android Credential Manager Restore Key',
     };
@@ -252,6 +255,9 @@ export async function restoreSession(req: Request, res: Response) {
         transports: cred.transports as any,
       },
       requireUserVerification: false,
+      advancedFIDOConfig: {
+        userVerification: 'discouraged',
+      },
     });
 
     if (!verification.verified) {
@@ -260,13 +266,15 @@ export async function restoreSession(req: Request, res: Response) {
 
     db.updateCredentialCounter(cred.id, verification.authenticationInfo.newCounter);
 
-    // Issue new token pair
-    const tokens = db.createTokenPair(user.id);
+    // Issue new token pair inheriting original bound scope and clientId
+    const tokens = db.createTokenPair(user.id, 3600, cred.scope || 'openid profile', cred.clientId);
 
     console.log(`=======================================================`);
     console.log(`[SESSION RESTORED SUCCESSFULLY VIA RESTORE CREDENTIAL]`);
     console.log(`User:          ${user.username} (${user.id})`);
     console.log(`Credential ID: ${cred.id}`);
+    console.log(`Scope:         ${tokens.scope}`);
+    console.log(`Client ID:     ${tokens.clientId || 'default'}`);
     console.log(`AAGUID:        ${cred.aaguid}`);
     console.log(`BE (BackupEligible): ${cred.backupEligible}`);
     console.log(`BS (BackupState):    ${cred.backupState}`);
@@ -279,6 +287,7 @@ export async function restoreSession(req: Request, res: Response) {
       access_token: tokens.accessToken,
       refresh_token: tokens.refreshToken,
       expires_in: 3600,
+      scope: tokens.scope,
       user: {
         id: user.id,
         username: user.username,
