@@ -68,7 +68,12 @@ class MainActivity : ComponentActivity() {
                     topBar = {
                         @OptIn(ExperimentalMaterial3Api::class)
                         TopAppBar(
-                            title = { Text("Restore Credentials PoC", fontWeight = FontWeight.Bold) },
+                            title = {
+                                Column {
+                                    Text("Restore Credentials PoC", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                                    Text("${BuildConfig.APP_FLAVOR_LABEL} (${BuildConfig.APPLICATION_ID})", fontSize = 12.sp, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f))
+                                }
+                            },
                             colors = TopAppBarDefaults.topAppBarColors(
                                 containerColor = MaterialTheme.colorScheme.primaryContainer,
                                 titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
@@ -376,6 +381,28 @@ fun PoCScreen(
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true
             )
+        }
+
+        // App Info Card
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFFECEFF1))
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Text(
+                        text = "📱 ${BuildConfig.APP_FLAVOR_LABEL}",
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 13.sp
+                    )
+                    Text(
+                        text = "Client ID: ${BuildConfig.CLIENT_ID} | Pkg: ${BuildConfig.APPLICATION_ID}",
+                        fontSize = 11.sp,
+                        fontFamily = FontFamily.Monospace,
+                        color = Color.DarkGray
+                    )
+                }
+            }
         }
 
         // Status Card

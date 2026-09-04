@@ -11,6 +11,14 @@ export const ISSUER = process.env.ISSUER || (RP_ID === 'localhost' ? `http://${R
 export const CLIENT_ID = process.env.CLIENT_ID || 'android-poc-client';
 export const REDIRECT_URI = process.env.REDIRECT_URI || 'restoreapp://auth-callback';
 
+export const ALLOWED_CLIENT_IDS: string[] = process.env.ALLOWED_CLIENT_IDS
+  ? process.env.ALLOWED_CLIENT_IDS.split(',').map(s => s.trim())
+  : ['android-poc-client', 'android-poc-client-a', 'android-poc-client-b'];
+
+export function isAllowedClientId(clientId: string): boolean {
+  return ALLOWED_CLIENT_IDS.includes(clientId) || clientId === CLIENT_ID;
+}
+
 export const ALLOWED_ORIGINS = [
   'http://localhost:8080',
   'http://10.0.2.2:8080',

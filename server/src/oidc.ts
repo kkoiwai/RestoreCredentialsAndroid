@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import crypto from 'crypto';
 import { db } from './db';
-import { RP_ID, PORT, ISSUER } from './config';
+import { RP_ID, PORT, ISSUER, isAllowedClientId } from './config';
 
 /**
  * GET /oauth/authorize
@@ -51,8 +51,15 @@ export function tokenEndpoint(req: Request, res: Response) {
       return res.status(400).json({ error: 'invalid_grant', error_description: 'Invalid or expired authorization code' });
     }
 
-    // 1. Verify Client ID match (client authentication omitted, but client_id must match authorization request)
-    if (!clientId || clientId !== authCode.clientId) {
+    // 1. Verify Client ID is allowed and matches authorization request
+    if (!clientId || !isAllowedClientId(clientId)) {
+      return res.status(400).json({
+        error: 'invalid_client',
+        error_description: `Unknown or unauthorized client_id: ${clientId}`,
+      });
+    }
+
+    if (clientId !== authCode.clientId) {
       return res.status(400).json({
         error: 'invalid_grant',
         error_description: 'Client ID mismatch between authorization request and token request',

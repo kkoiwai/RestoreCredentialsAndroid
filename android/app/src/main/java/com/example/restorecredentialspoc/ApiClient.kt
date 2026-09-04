@@ -50,8 +50,8 @@ class ApiClient {
             val jsonBody = JSONObject().apply {
                 put("grant_type", "authorization_code")
                 put("code", code)
-                put("client_id", "android-poc-client")
-                put("redirect_uri", "restoreapp://auth-callback")
+                put("client_id", BuildConfig.CLIENT_ID)
+                put("redirect_uri", BuildConfig.REDIRECT_URI)
                 if (!codeVerifier.isNullOrEmpty()) {
                     put("code_verifier", codeVerifier)
                 }
@@ -123,6 +123,7 @@ class ApiClient {
         try {
             val payload = JSONObject().apply {
                 put("response", JSONObject(responseJson))
+                put("client_id", BuildConfig.CLIENT_ID)
             }
 
             val request = Request.Builder()
@@ -182,7 +183,7 @@ class ApiClient {
     suspend fun restoreSession(baseUrl: String, assertionJson: String): Result<AuthTokenResult> = withContext(Dispatchers.IO) {
         try {
             val payload = JSONObject().apply {
-                put("client_id", "android-poc-client")
+                put("client_id", BuildConfig.CLIENT_ID)
                 put("assertion", JSONObject(assertionJson))
             }
 

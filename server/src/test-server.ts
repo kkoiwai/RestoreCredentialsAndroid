@@ -4,12 +4,14 @@
  */
 import crypto from 'crypto';
 import { Request, Response } from 'express';
+import { db } from './db';
 import {
   quickLoginEndpoint,
   getPasskeyRegistrationOptions,
 } from './webauthn';
 import {
   restoreSession,
+  getRestoreRegistrationOptions,
 } from './restore';
 import {
   authorizeEndpoint,
@@ -143,21 +145,41 @@ async function runDirectTests() {
   }
 
   // 4. Token Endpoint Tests
-  // 4a. Client ID mismatch test
+  // 4a-1. Token exchange with unknown client_id
   {
     const code = issueFreshAuthCode();
     const req = createMockRequest({
       body: {
         grant_type: 'authorization_code',
         code,
-        client_id: 'wrong-client',
+        client_id: 'unknown-client',
         redirect_uri: 'restoreapp://auth-callback',
         code_verifier: codeVerifier,
       },
     });
     const res = createMockResponse();
     tokenEndpoint(req, res as unknown as Response);
-    console.log('4a. Token exchange with wrong client_id:', res.statusCode, res.body?.error_description);
+    console.log('4a-1. Token exchange with unknown client_id:', res.statusCode, res.body?.error);
+    if (res.statusCode !== 400 || res.body?.error !== 'invalid_client') {
+      throw new Error('Expected 400 invalid_client for unknown client_id');
+    }
+  }
+
+  // 4a-2. Token exchange with mismatched client_id (App B client requesting code issued to App A)
+  {
+    const code = issueFreshAuthCode();
+    const req = createMockRequest({
+      body: {
+        grant_type: 'authorization_code',
+        code,
+        client_id: 'android-poc-client-b',
+        redirect_uri: 'restoreapp://auth-callback',
+        code_verifier: codeVerifier,
+      },
+    });
+    const res = createMockResponse();
+    tokenEndpoint(req, res as unknown as Response);
+    console.log('4a-2. Token exchange with mismatched client_id:', res.statusCode, res.body?.error_description);
     if (res.statusCode !== 400 || res.body?.error !== 'invalid_grant' || !res.body?.error_description?.includes('Client ID mismatch')) {
       throw new Error('Expected 400 invalid_grant for Client ID mismatch');
     }
@@ -202,7 +224,7 @@ async function runDirectTests() {
     }
   }
 
-  // 4d. Successful Token Exchange with valid code_verifier & client_id
+  // 4d. Successful Token Exchange with valid code_verifier & App A client_id
   {
     const code = issueFreshAuthCode();
     const req = createMockRequest({
@@ -216,14 +238,79 @@ async function runDirectTests() {
     });
     const res = createMockResponse();
     tokenEndpoint(req, res as unknown as Response);
-    console.log('4d. Token exchange success:', res.statusCode, 'token:', res.body?.access_token ? 'issued' : 'missing');
+    console.log('4d. Token exchange App A success:', res.statusCode, 'token:', res.body?.access_token ? 'issued' : 'missing');
     if (res.statusCode !== 200 || !res.body?.access_token) {
-      throw new Error('Token exchange failed with valid verifier');
+      throw new Error('Token exchange failed with valid verifier for App A');
     }
   }
 
-  // 5. restore-session Client ID validation
-  // 5a. Missing client_id
+  // 4e. Successful Token Exchange with valid code_verifier & App B client_id
+  {
+    const reqCode = createMockRequest({
+      body: {
+        username: 'bob-user',
+        client_id: 'android-poc-client-b',
+        redirect_uri: 'restoreapp-b://auth-callback',
+        code_challenge: codeChallenge,
+        code_challenge_method: 'S256',
+      },
+    });
+    const resCode = createMockResponse();
+    quickLoginEndpoint(reqCode, resCode as unknown as Response);
+    const codeB = resCode.body?.code;
+
+    const req = createMockRequest({
+      body: {
+        grant_type: 'authorization_code',
+        code: codeB,
+        client_id: 'android-poc-client-b',
+        redirect_uri: 'restoreapp-b://auth-callback',
+        code_verifier: codeVerifier,
+      },
+    });
+    const res = createMockResponse();
+    tokenEndpoint(req, res as unknown as Response);
+    console.log('4e. Token exchange App B success:', res.statusCode, 'token:', res.body?.access_token ? 'issued' : 'missing');
+    if (res.statusCode !== 200 || !res.body?.access_token) {
+      throw new Error('Token exchange failed with valid verifier for App B');
+    }
+  }
+
+  // 5. Restore Registration Options (excludeCredentials should be empty)
+  {
+    const userAlice = db.createUser('alice_exclude_test', 'Alice Exclude Test');
+    // Save an existing restore key for Alice
+    db.saveCredential({
+      id: 'alice_existing_key',
+      userId: userAlice.id,
+      publicKey: 'mock-pubkey',
+      counter: 0,
+      credentialType: 'restore_key',
+      aaguid: '00000000-0000-0000-0000-000000000000',
+      backupEligible: true,
+      backupState: true,
+      userVerified: true,
+      userPresent: true,
+      clientId: 'android-poc-client',
+      createdAt: Date.now(),
+    });
+
+    const tokensAlice = db.createTokenPair(userAlice.id);
+
+    const req = createMockRequest({
+      headers: { authorization: `Bearer ${tokensAlice.accessToken}` },
+    });
+    const res = createMockResponse();
+    await getRestoreRegistrationOptions(req, res as unknown as Response);
+    const excludeCreds = res.body?.options?.excludeCredentials;
+    console.log('5. getRestoreRegistrationOptions excludeCredentials:', excludeCreds);
+    if (excludeCreds && excludeCreds.length > 0) {
+      throw new Error(`Expected excludeCredentials to be empty, got ${excludeCreds.length} credentials`);
+    }
+  }
+
+  // 6. restore-session Client ID validation & Cross-App Protection
+  // 6a. Missing client_id
   {
     const req = createMockRequest({
       body: {
@@ -232,13 +319,13 @@ async function runDirectTests() {
     });
     const res = createMockResponse();
     await restoreSession(req, res as unknown as Response);
-    console.log('5a. restore-session missing client_id:', res.statusCode, res.body?.error_description);
+    console.log('6a. restore-session missing client_id:', res.statusCode, res.body?.error_description);
     if (res.statusCode !== 400 || res.body?.error !== 'invalid_client' || !res.body?.error_description?.includes('Missing client_id')) {
       throw new Error('Expected 400 invalid_client for missing client_id');
     }
   }
 
-  // 5b. Invalid client_id
+  // 6b. Invalid client_id
   {
     const req = createMockRequest({
       body: {
@@ -248,9 +335,78 @@ async function runDirectTests() {
     });
     const res = createMockResponse();
     await restoreSession(req, res as unknown as Response);
-    console.log('5b. restore-session invalid client_id:', res.statusCode, res.body?.error_description);
+    console.log('6b. restore-session invalid client_id:', res.statusCode, res.body?.error_description);
     if (res.statusCode !== 400 || res.body?.error !== 'invalid_client' || !res.body?.error_description?.includes('Invalid or unknown client_id')) {
       throw new Error('Expected 400 invalid_client for unknown client_id');
+    }
+  }
+
+  // 6c. Multi-App / Cross-App Protection Test
+  {
+    // Setup Alice (App A) and Bob (App B)
+    const userAlice = db.createUser('alice_app_a', 'Alice App A');
+    const userBob = db.createUser('bob_app_b', 'Bob App B');
+
+    const aliceKeyId = 'alice_restore_key_123';
+    const bobKeyId = 'bob_restore_key_456';
+
+    db.saveCredential({
+      id: aliceKeyId,
+      userId: userAlice.id,
+      publicKey: 'mock-alice-key',
+      counter: 0,
+      credentialType: 'restore_key',
+      aaguid: '00000000-0000-0000-0000-000000000000',
+      backupEligible: true,
+      backupState: true,
+      userVerified: true,
+      userPresent: true,
+      clientId: 'android-poc-client', // App A
+      createdAt: Date.now(),
+    });
+
+    db.saveCredential({
+      id: bobKeyId,
+      userId: userBob.id,
+      publicKey: 'mock-bob-key',
+      counter: 0,
+      credentialType: 'restore_key',
+      aaguid: '00000000-0000-0000-0000-000000000000',
+      backupEligible: true,
+      backupState: true,
+      userVerified: true,
+      userPresent: true,
+      clientId: 'android-poc-client-b', // App B
+      createdAt: Date.now(),
+    });
+
+    // Generate mock clientDataJSON with valid challenge and origin
+    const challenge = 'challenge_cross_app_test_' + Date.now();
+    db.saveChallenge(challenge, 'restore_auth');
+
+    const clientDataJSON = Buffer.from(JSON.stringify({
+      type: 'webauthn.get',
+      challenge: challenge,
+      origin: 'android:apk-key-hash:Wgcrc1QhQAIvKXlPrMo3HbZlhGYdPEkZrob3i3rbz98',
+    })).toString('base64url');
+
+    // App B attempts to restore using Alice's key -> MUST BE REJECTED
+    const reqCrossApp = createMockRequest({
+      body: {
+        client_id: 'android-poc-client-b',
+        assertion: {
+          id: aliceKeyId,
+          response: {
+            clientDataJSON: clientDataJSON,
+          },
+        },
+      },
+    });
+    const resCrossApp = createMockResponse();
+    await restoreSession(reqCrossApp, resCrossApp as unknown as Response);
+    console.log('6c. Cross-app restore rejection:', resCrossApp.statusCode, resCrossApp.body?.error_description);
+    if (resCrossApp.statusCode !== 400 || resCrossApp.body?.error !== 'invalid_grant' || !resCrossApp.body?.error_description?.includes('Client ID mismatch')) {
+      throw new Error('Expected 400 invalid_grant for cross-app restore key abuse');
     }
   }
 

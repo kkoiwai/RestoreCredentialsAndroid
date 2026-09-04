@@ -13,7 +13,7 @@ import {
   convertAAGUIDToString,
 } from '@simplewebauthn/server/helpers';
 import { db } from './db';
-import { RP_ID, RP_NAME, getExpectedOrigin, isAllowedOrigin, CLIENT_ID } from './config';
+import { RP_ID, RP_NAME, getExpectedOrigin, isAllowedOrigin, CLIENT_ID, isAllowedClientId } from './config';
 
 export type RegistrationResponseJSON = VerifyRegistrationResponseOpts['response'];
 export type AuthenticationResponseJSON = VerifyAuthenticationResponseOpts['response'];
@@ -42,8 +42,9 @@ export async function getRestoreRegistrationOptions(req: Request, res: Response)
     return res.status(401).json({ error: 'Unauthorized: valid access token required' });
   }
 
-  const existingRestoreKeys = db.getCredentialsByUserId(user.id, 'restore_key');
-
+  // NOTE: excludeCredentials is intentionally empty for Restore Credentials to allow
+  // multi-device / multi-instance setups where the same user creates a restore key
+  // on a new or separate device without being blocked by existing keys.
   const options = await generateRegistrationOptions({
     rpName: RP_NAME,
     rpID: RP_ID,
@@ -51,10 +52,7 @@ export async function getRestoreRegistrationOptions(req: Request, res: Response)
     userName: user.username,
     userDisplayName: user.displayName,
     attestationType: 'none',
-    excludeCredentials: existingRestoreKeys.map(k => ({
-      id: k.id,
-      transports: k.transports as any,
-    })),
+    excludeCredentials: [],
     authenticatorSelection: {
       residentKey: 'required',
       userVerification: 'preferred',
@@ -77,13 +75,16 @@ export async function verifyRestoreRegistration(req: Request, res: Response) {
     return res.status(401).json({ error: 'Unauthorized: valid access token required' });
   }
 
-  const { response } = req.body as { response: RegistrationResponseJSON };
+  const { response, client_id } = req.body as {
+    response: RegistrationResponseJSON;
+    client_id?: string;
+  };
   if (!response) {
     return res.status(400).json({ error: 'Missing registration response JSON' });
   }
 
   const clientData = JSON.parse(Buffer.from(response.response.clientDataJSON, 'base64url').toString('utf-8'));
-  console.log(`[RESTORE REGISTRATION] Origin: ${clientData.origin}`);
+  console.log(`[RESTORE REGISTRATION] Origin: ${clientData.origin}, ClientId: ${client_id || CLIENT_ID}`);
 
   if (!isAllowedOrigin(clientData.origin)) {
     console.error(`[RESTORE REGISTRATION REJECTED] Origin is not authorized: ${clientData.origin}`);
@@ -131,6 +132,7 @@ export async function verifyRestoreRegistration(req: Request, res: Response) {
       backupState: parsedAuthData.flags.bs,    // BS flag (Backup State)
       userVerified: parsedAuthData.flags.uv,   // UV flag
       userPresent: parsedAuthData.flags.up,    // UP flag
+      clientId: client_id || CLIENT_ID,        // Bound client ID (App A, App B, etc.)
       createdAt: Date.now(),
       deviceInfo: 'Android Credential Manager Restore Key',
     };
@@ -193,7 +195,7 @@ export async function restoreSession(req: Request, res: Response) {
     return res.status(400).json({ error: 'invalid_client', error_description: 'Missing client_id' });
   }
 
-  if (client_id !== CLIENT_ID) {
+  if (!isAllowedClientId(client_id)) {
     return res.status(400).json({ error: 'invalid_client', error_description: 'Invalid or unknown client_id' });
   }
 
@@ -202,7 +204,7 @@ export async function restoreSession(req: Request, res: Response) {
   }
 
   const clientData = JSON.parse(Buffer.from(assertion.response.clientDataJSON, 'base64url').toString('utf-8'));
-  console.log(`[RESTORE SESSION] Origin: ${clientData.origin}`);
+  console.log(`[RESTORE SESSION] Origin: ${clientData.origin}, ClientId: ${client_id}`);
 
   if (!isAllowedOrigin(clientData.origin)) {
     console.error(`[RESTORE SESSION REJECTED] Origin is not authorized: ${clientData.origin}`);
@@ -221,6 +223,15 @@ export async function restoreSession(req: Request, res: Response) {
 
   if (cred.credentialType !== 'restore_key') {
     return res.status(403).json({ error: 'Credential is not a registered restore key' });
+  }
+
+  // Cross-app protection: Verify that the credential belongs to the requesting client_id
+  if (cred.clientId && cred.clientId !== client_id) {
+    console.warn(`[RESTORE REJECTED] Client ID mismatch: Credential is bound to "${cred.clientId}", but restore requested by "${client_id}"`);
+    return res.status(400).json({
+      error: 'invalid_grant',
+      error_description: `Client ID mismatch: Credential belongs to client "${cred.clientId}"`,
+    });
   }
 
   const user = db.getUserById(cred.userId);

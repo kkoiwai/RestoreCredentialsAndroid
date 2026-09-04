@@ -40,6 +40,29 @@ android {
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
+
+    flavorDimensions += "appType"
+    productFlavors {
+        create("appA") {
+            dimension = "appType"
+            applicationId = "com.example.restorecredentialspoc"
+            manifestPlaceholders["appLabel"] = "RestorePoC (App A)"
+            manifestPlaceholders["authScheme"] = "restoreapp"
+            buildConfigField("String", "CLIENT_ID", "\"android-poc-client\"")
+            buildConfigField("String", "REDIRECT_URI", "\"restoreapp://auth-callback\"")
+            buildConfigField("String", "APP_FLAVOR_LABEL", "\"App A (Alice)\"")
+        }
+        create("appB") {
+            dimension = "appType"
+            applicationId = "com.example.restorecredentialspoc.appb"
+            manifestPlaceholders["appLabel"] = "RestorePoC (App B)"
+            manifestPlaceholders["authScheme"] = "restoreapp-b"
+            buildConfigField("String", "CLIENT_ID", "\"android-poc-client-b\"")
+            buildConfigField("String", "REDIRECT_URI", "\"restoreapp-b://auth-callback\"")
+            buildConfigField("String", "APP_FLAVOR_LABEL", "\"App B (Bob)\"")
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -47,7 +70,7 @@ android {
     buildFeatures {
       compose = true
       aidl = false
-      buildConfig = false
+      buildConfig = true
       shaders = false
     }
 

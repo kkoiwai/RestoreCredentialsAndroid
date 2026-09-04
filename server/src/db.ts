@@ -18,6 +18,7 @@ export interface Credential {
   userVerified: boolean;   // UV flag (Bit 2)
   userPresent: boolean;    // UP flag (Bit 0)
   deviceInfo?: string;
+  clientId?: string; // Bound client ID (e.g. android-poc-client, android-poc-client-b)
   createdAt: number;
 }
 
