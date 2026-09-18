@@ -38,6 +38,13 @@ Android Credential Manager の **Restore Credentials（資格情報の復元）*
 - 生成された Attestation レスポンスをサーバーへ送信して登録完了とします。
 - ※ログインのたびに無駄な鍵生成を行わないよう、`has_synced_restore_credential` などのローカルフラグを設定します。
 
+> [!IMPORTANT]
+> **【重要】Restore Credentials の復元対象スコープとアンインストール時の注意（Block Store との相違点）**
+> - **対象スコープ**: Restore Credentials は**「新端末への移行・初期セットアップ時（Google Cloud バックアップまたは D2D ケーブル転送による全体復元）」に特化**した機能です。
+> - **同一端末での再インストールでは復元されない**: アプリをアンインストールまたはストレージ消去（Clear storage）すると、OS/GMS により**端末ローカルの復元キーは自動的に破棄**されます。その後、**単に Google Play ストア等から通常再インストールを行っても、OS の移行セットアップパイプラインが起動しないため Restore Key は自動復元されません**。
+> - **公式テストガイドの「アンインストール＆再インストール」の真意**: 公式テスト手順にある「アンインストール後に再インストール」は、開発機上でローカルデータをリセットした上で、Android Studio の Running Devices 上から **[Restore App Data] アクションを手動実行して OS のリストア処理をエミュレート**するための手順です。
+> - **同一端末でのアンインストール後もログイン状態を維持したい場合**: 同一端末でのアンインストール＆再インストール間でもセッション・トークンを維持したい要件がある場合は、前身機能である **Block Store**（`If the user enables Backup services, Block Store data is persisted across the app uninstall/reinstall`）の採用、または Restore Credentials との併用を検討してください。
+
 #### ③ 新端末初回起動時のサイレントセッション復旧（2-Tier 復元アーキテクチャ）
 - **Tier 2（フォアグラウンド復元 - Launcher Activity）**:
   - アプリ起動時、ローカルストレージ（EncryptedSharedPreferences 等）にトークンが存在しない場合、バックエンドから復旧用チャレンジを取得。
@@ -133,7 +140,8 @@ OAuth の Access Token / Refresh Token だけでなく、OIDC の `id_token` も
 - サーバー側で `.well-known/assetlinks.json` に登録された正規の署名証明書（Release Keystore 等）の SHA-256 フィンガープリントと厳格に突合し、不正な再署名 APK や他アプリからの復元リクエストを確実にブロックします。
 
 #### ⑥ 鍵のライフサイクル・孤立鍵（Orphaned Keys）対策
-- アプリのアンインストールや端末設定でのデータ消去ではサーバーに通知が届きません。
+- アプリのアンインストールや端末設定でのデータ消去では、OSによって端末ローカルの Restore Key は削除されますが、サーバー側には削除通知が届きません。
+- そのため、サーバーの DB には無効となった古い公開鍵（孤立鍵）が残存することになります。
 - 新しい Restore Key 登録時に同一ユーザーの古い Restore Key を非活性化する、または有効期限（TTL）を設けて定期クリーンアップする仕組みをサーバー側に導入します。
 
 ---
@@ -160,9 +168,10 @@ OAuth の Access Token / Refresh Token だけでなく、OIDC の `id_token` も
 
 ### 4. 公式 Google ドキュメントリンク (Official Documentation)
 
-- 📘 [Android Developers: Restore Credentials 実装ガイド](https://developer.android.com/identity/sign-in/restore-credentials-implementation)
+- 📘 [Android Developers: Restore Credentials 概要・仕様ガイド](https://developer.android.com/identity/sign-in/restore-credentials)
 - 🧪 [Android Developers: Restore Credentials テストガイド](https://developer.android.com/identity/sign-in/test-restore-credentials)
 - 🔑 [Android Developers: Credential Manager 概要](https://developer.android.com/identity/sign-in/credential-manager)
+- 📦 [Android Developers: Block Store ガイド (同一端末再インストール時のトークン永続化)](https://developer.android.com/identity/block-store)
 - 🌐 [Google Developers: パスキー＆WebAuthn 開発者向けガイド](https://developers.google.com/identity/passkeys)
 
 ---
@@ -201,6 +210,13 @@ Add three lifecycle hooks: **creation upon login**, **zero-tap restoration on ne
   - Therefore, for apps whose primary requirement is seamless cloud restoration, creating a local-only key is ineffective for cloud restores. It is generally recommended to either skip key creation or prompt the user to enable a screen lock, unless direct cable D2D migration is explicitly targeted.
 - Send the attestation response back to the server to complete registration.
 - Store a local flag (`has_synced_restore_credential = true`) to prevent redundant creation on every subsequent app launch.
+
+> [!IMPORTANT]
+> **Important: Target Scope & Behavior on App Uninstall (Comparison with Block Store)**
+> - **Target Scope**: Restore Credentials is fundamentally designed for **new device transition & setup (via Google Cloud Backup or D2D cable/Wi-Fi transfer)**.
+> - **Not Restored via Standard Reinstall**: Uninstalling the app or clearing app storage causes the OS/GMS to **delete the local restore key**. Simply reinstalling the app from Google Play does **not** trigger the OS device restoration pipeline; thus, the credential is not automatically fetched from the cloud.
+> - **Testing Workflow Clarification**: The "uninstall & reinstall" step described in Google's official testing guide is meant to reset local state on a single test device, after which the developer must manually trigger the **[Restore App Data]** action in Android Studio (or execute `bmgr restore`) to emulate the OS device restore ceremony.
+> - **Session Persistence Across Uninstalls on the Same Device**: If your business requirement demands retaining session tokens across uninstalls/reinstalls on the *same* device, adopt or combine with **Block Store** (*"If the user enables Backup services, Block Store data is persisted across the app uninstall/reinstall"*).
 
 #### 1.3 Silent Session Restoration on New Devices (Two-Tier Architecture)
 - **Tier 2 (Foreground Fallback - Launcher Activity)**:
@@ -292,7 +308,9 @@ Whether an `id_token` should be re-issued upon session restoration—and whether
 - The server must validate this value against authorized SHA-256 fingerprints declared in `.well-known/assetlinks.json` to block tampered or unauthorized APKs.
 
 #### 2.6 Lifecycle & Orphaned Key Mitigation
-- App uninstalls do not trigger server callbacks. Invalidate older restore keys upon registering a new key for the user, or implement server-side TTL expiration to clean up inactive keys.
+- App uninstalls or clearing storage automatically deletes the local Restore Key from the device via Google Play Services, but does NOT trigger any webhook or server callbacks.
+- As a result, stale/orphaned public keys remain registered in the server database.
+- Invalidate older restore keys upon registering a new key for the user, or implement server-side TTL expiration to clean up inactive keys.
 
 ---
 
@@ -318,9 +336,10 @@ The following columns should be added/maintained:
 
 ### 4. 公式 Google ドキュメントリンク (Official Documentation)
 
-- 📘 [Android Developers: Restore Credentials 実装ガイド](https://developer.android.com/identity/sign-in/restore-credentials-implementation)
+- 📘 [Android Developers: About Restore Credentials Guide](https://developer.android.com/identity/sign-in/restore-credentials)
 - 🧪 [Android Developers: Test Restore Credentials Guide](https://developer.android.com/identity/sign-in/test-restore-credentials)
 - 🔑 [Android Developers: Credential Manager 概要](https://developer.android.com/identity/sign-in/credential-manager)
+- 📦 [Android Developers: Block Store Guide (Token persistence across uninstalls on same device)](https://developer.android.com/identity/block-store)
 - 🌐 [Google Developers: パスキー＆WebAuthn 開発者向けガイド](https://developers.google.com/identity/passkeys)
 
 ---
@@ -419,6 +438,8 @@ bash deploy.sh
 2. **🛡️ 2. Restore Credential作成**: トークン交換完了後、自動（または手動ボタン）で `CredentialManager.createCredential` を実行し、GMS に Restore Key を登録。
 3. **🌐 3. 保護サービス呼び出し**: 発行された Access Token で `/api/service/profile` を呼び出し、登録済み Passkey / Restore Key の AAGUID や BE/BS フラグを確認。
 4. **📱 4. 新端末移行シミュレーション**: アプリ内のトークンを消去し、新端末移行直後の状態を再現。
+   - ※**重要**: アプリをアンインストールまたはストレージ消去すると、OS/GMSにより端末ローカルの Restore Key 自体も削除されます。本PoCのシミュレーション機能はアプリ内トークン（SharedPreferences）のみをクリアすることで、新端末に Restore Key が移行・保持された状態を疑似再現しています。
+   - ※**実機/エミュレータで完全な端末移行・復元テストを行う場合**: Android Studio（Otter以降）の Running Devices ツールバーから **[Backup App Data]** を実行後、アプリをアンインストール＆再インストールし、Running Devices の **[Restore App Data]** を手動実行（OSリストア処理をエミュレート）してください。単なる通常インストール・再インストールでは自動復元されません。
 5. **⚡ 5. Restore Credentialで復旧 (Zero-Tap)**: `getRestoreCredential` をサイレント呼び出しし、ダイアログなしで新規トークンを再取得。
 6. **🚪 6. サインアウト**: `clearCredentialState(TYPE_CLEAR_RESTORE_CREDENTIAL)` で GMS 内の Restore Key を抹消。
 
